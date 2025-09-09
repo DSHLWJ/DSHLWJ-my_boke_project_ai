@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+  <meta charset="UTF-8">
+  <title>生成博客文章</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", sans-serif;
+      background: linear-gradient(to right, #ece9e6, #ffffff);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      background: rgba(255, 255, 255, 0.9);
+      padding: 30px 40px;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+      width: 600px;
+      max-width: 90%;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    label {
+      font-weight: bold;
+      color: #444;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0 16px 0;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+      transition: border 0.3s;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: #4CAF50;
+      outline: none;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    pre {
+      background: #f9f9f9;
+      padding: 15px;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+
+    /* ✅ 单独为复选框美化 */
+    .checkbox-container {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .checkbox-container input {
+      width: auto;
+      margin-right: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>使用 AI 生成博客文章</h1>
+
+    <label>选择服务提供商：</label>
+    <select id="provider" onchange="updateModels()">
+      <option value="chatgpt">ChatGPT（OpenAI）</option>
+      <option value="doubao">豆包（字节跳动）</option>
+    </select>
+
+    <label>文章标题：</label>
+    <input id="title" placeholder="请输入文章标题">
+
+    <label>文章分类：</label>
+    <select id="category">
+      <option value="">加载中...</option>
+    </select>
+
+    <label>使用模型：</label>
+    <select id="model"></select>
+
+    <label>内容提示（Prompt）：</label>
+    <textarea id="prompt" rows="8" placeholder="请输入文章主题或提问"></textarea>
+
+    <!-- ✅ 新增是否使用代理复选框 -->
+    <div class="checkbox-container">
+      <input type="checkbox" id="useProxy">
+      <label for="useProxy">使用代理</label>
+    </div>
+
+    <div id="loadingOverlay" style="
+    display:none;
+    position: fixed;
+    top:0; left:0; right:0; bottom:0;
+    background: rgba(0,0,0,0.5);
+    z-index:9999;
+    justify-content:center;
+    align-items:center;
+    color:#fff;
+    font-size:24px;
+    ">生成中，请稍候...</div>
+
+    <button onclick="generate()">生成文章</button>
+
+    <pre id="result"></pre>
+  </div>
+
+  <script>
+    const models = {
+      chatgpt: [
+        { value: "gpt-3.5-turbo", label: "gpt-3.5-turbo" },
+        { value: "gpt-3.5-turbo-1106", label: "gpt-3.5-turbo-1106" },
+        { value: "gpt-4o-mini", label: "gpt-4o-mini" },
+        { value: "gpt-4o", label: "gpt-4o" }
+      ],
+      doubao: [
+        { value: "doubao-seed-1-6-flash-250615", label: "doubao-seed-1-6-flash-250615" },
+        { value: "doubao-seed-1-6-250615", label: "doubao-seed-1-6-250615" }
+      ]
+    };
+
+    function updateModels() {
+      const provider = document.getElementById("provider").value;
+      const modelSelect = document.getElementById("model");
+      modelSelect.innerHTML = models[provider]
+        .map(m => `<option value="${m.value}">${m.label}</option>`)
+        .join('');
+    }
+
+    async function loadCategories() {
+      const categorySelect = document.getElementById('category');
+      try {
+        const res = await fetch('http://localhost:3000/categories');
+        const data = await res.json();
+        categorySelect.innerHTML = data.map(cat =>
+          `<option value="${cat}">${cat}</option>`
+        ).join('');
+      } catch (err) {
+        categorySelect.innerHTML = '<option value="">加载失败</option>';
+        console.error('分类加载失败:', err);
+      }
+    }
+
+    async function generate() {
+      const title = document.getElementById('title').value.trim();
+      const prompt = document.getElementById('prompt').value.trim();
+      const category = document.getElementById('category').value;
+      const model = document.getElementById('model').value;
+      const provider = document.getElementById('provider').value;
+      const useProxy = document.getElementById('useProxy').checked; // ✅ 获取复选框状态
+
+      if (!title || !prompt) {
+        alert('标题和提示内容不能为空');
+        return;
+      }
+
+       // ✅ 只在点击生成文章时显示蒙版
+      const overlay = document.getElementById('loadingOverlay');
+      overlay.style.display = 'flex'; // 显示加载蒙版
+
+      try {
+        const res = await fetch('http://localhost:3000/generate-article', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, prompt, category, model, provider, useProxy })
+        });
+        const data = await res.json();
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+
+      } catch (err) {
+        console.error(err);
+        document.getElementById('result').textContent = '请求失败，请检查网络或代理';
+      } finally {
+        overlay.style.display = 'none'; // 隐藏加载蒙版
+      }
+    }
+
+    loadCategories();
+    updateModels();
+  </script>
+</body>
+
+</html>
