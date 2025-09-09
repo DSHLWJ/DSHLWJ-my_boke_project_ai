@@ -57,8 +57,18 @@ async function generateArticle(prompt, model, provider = 'chatgpt', useProxy = f
     };
     payload = {
       model: model,
+      // 豆包模型流式输出 role system
+      // 
+      //  {
+      //       "content": "You are a helpful assistant.",
+      //       "role": "system"
+      //   },
       messages: [
-        { role: 'user', content: prompt },
+         {
+            "content": "You are a helpful assistant.",
+            "role": "system"
+        },
+        {  content: prompt ,role: 'user'},
       ],
       max_tokens: 6000,
     };
@@ -76,15 +86,46 @@ async function generateArticle(prompt, model, provider = 'chatgpt', useProxy = f
   const axiosConfig = { headers };
   if (useProxy) axiosConfig.httpsAgent = httpsAgent;
 
+  
+
   // const response = await axios.post(url, payload, axiosConfig);
-  const response = await withTimeout(axios.post(url, payload, axiosConfig), TIMEOUT_MS);
+  // const response = await withTimeout(axios.post(url, payload, axiosConfig), TIMEOUT_MS);
+
+  // const response = await axios.post(url, payload, {
+  //   ...axiosConfig,
+  //   timeout: TIMEOUT_MS,
+  //   maxBodyLength: Infinity,
+  //   maxContentLength: Infinity
+  // });
+  // 改为流式输出
+  const response = await axios.post(url, payload, {
+  ...axiosConfig,
+    responseType: 'stream',
+    timeout: 0
+  });
+
+  let data = '';
+  for await (const chunk of response.data) {
+    data += chunk.toString();
+  }
+
+  // ✅ 解析 JSON 并统一处理
+  const parsed = JSON.parse(data);
+
+  if (provider === 'chatgpt') {
+    return parsed.choices[0].message.content;
+  } else if (provider === 'doubao') {
+    return parsed.choices?.[0]?.message?.content || '';
+  }
+
+
 
   // ✅ ChatGPT 与豆包返回字段不同，统一处理
-  if (provider === 'chatgpt') {
-    return response.data.choices[0].message.content;
-  } else if (provider === 'doubao') {
-    return response.data.choices?.[0]?.message?.content || ''; // 豆包返回的 choices 可能是空数组
-  }
+  // if (provider === 'chatgpt') {
+  //   return response.data.choices[0].message.content;
+  // } else if (provider === 'doubao') {
+  //   return response.data.choices?.[0]?.message?.content || ''; // 豆包返回的 choices 可能是空数组
+  // }
 }
 
 // 保存文章为 markdown
